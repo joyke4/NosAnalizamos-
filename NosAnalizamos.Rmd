@@ -16,6 +16,7 @@ library(dplyr)
 library(lubridate)
 library(ggplot2)
 library(pacman)
+library(pracma)
 
 
 ```
@@ -25,12 +26,17 @@ library(pacman)
 #Eliminamos al usuario cuyo id es martsobm del conjunto de datos.
 datos <- subset(datos, Id != "martsobm")
 
-d_1<-datos%>%
+df_1<-datos%>%
   select(ALG,FP,DCS,MD)%>%
   mutate(across(everything(),~ case_when(.=="NC" ~ "3",
                                          .=="NP" ~ NA,
-                                         grepl("^[0-9]+(\\.[0-9]+)?$",.) ~ ., TRUE ~ NA)))
+                                         grepl("^[0-9]+(\\.[0-9]+)?$",.) ~ ., TRUE ~ NA)))%>%
 
+# 3 Convertir a numérico
+mutate(
+  across(everything(), ~ as.numeric(.))
+)
+save(df_1,file = "data/datos.Rdata")
 
 
 ```
@@ -39,15 +45,293 @@ d_1<-datos%>%
 
 ```{r}
 
+#Obtén una tabla de estadísticos de estas variables. Donde en la primera columnas aparezca cada una de las asignaturas y las siguientes columnas se correspondan con los  estadísticos que se indican, en este orden: valor mínimo, percentil25, mediana, valor medio, desviació típica, percentil75, valor máximo. Los resultados se mostrarán con 2 decimales
 
 
+
+
+
+tabla_N<-df_1%>%
+   summarise(
+    across(everything(),list(min     = ~ min(.x, na.rm = TRUE),
+        p25     = ~ quantile(.x, 0.25, na.rm = TRUE),
+        mediana = ~ median(.x, na.rm = TRUE),
+        media   = ~ mean(.x, na.rm = TRUE),
+        sd      = ~ sd(.x, na.rm = TRUE),
+        p75     = ~ quantile(.x, 0.75, na.rm = TRUE),
+        max     = ~ max(.x, na.rm = TRUE)))
+  )%>%
+  pivot_longer(everything(),names_to =c("asignatura", "estadistico"),
+    names_sep = "_"
+   )%>% pivot_wider(
+    names_from = estadistico,
+    values_from = value
+  ) %>%
+  # Redondear a 2 decimales
+  mutate(across(-asignatura, ~ round(.x, 2)))
+
+
+tabla_N
+
+```
+
+
+```{r}
+#Usa la función ggpairs de la librería GGally y representa las relaciones entre todas las variables.
+
+library(GGally)
+
+ggpairs(df_1,
+        title = "Relaciones entre todas las variables",
+        progress = FALSE,
+        upper = list(continuous = wrap("cor", size = 4)),
+        lower = list(continuous = wrap("points", alpha = 0.6, size = 1)),
+        diag  = list(continuous = wrap("densityDiag", alpha = 0.6))
+)
+
+
+
+
+```
+```{r}
+#Determina las matrices de correlación y covarianza de dichas variables, con las opciones "Spearman" y "Pearson" e indica qué  pares de variables tienen la correlación más alta. 
+
+
+cor_pearson  <- cor(df_1, method = "pearson",  use = "complete.obs")
+cor_spearman <- cor(df_1, method = "spearman", use = "complete.obs")
+
+cor_spearman
+cor_pearson
+# con la matrice de spearson podemos mirar que hay una fuerta relacion lineal entre las variables  entre alg y fp tambien entre alg y md.tambien la matrice de spearman muestre la gran correlacion entre FP y ALG que es de 1 tambien MD esta muy correlada con fp y alg 
+
+```
+
+```{r}
+#Representa en una misma gráfica los boxplots con las calificaciones obtenidas en las diferentes asignaturas.
+
+df_notas <- df_1 %>%
+  pivot_longer(
+    cols = everything(),
+    names_to = "asignatura",
+    values_to = "nota")
+
+ggplot(df_notas,aes(x=asignatura, y=nota,fill=asignatura))+
+  geom_boxplot(alpha=0.7)+
+  labs(
+    title = "Distribución de calificaciones por asignatura",
+    x = "Asignatura",
+    y = "Nota"
+  ) +
+  theme_minimal()+
+ theme(legend.position = "none")
 
 
 ```
 
 
 
+```{r}
+#Seleccionar solo alumnos con todas las asignaturas completas
 
+df_al <- datos %>%
+  filter(complete.cases(df_1)) %>%
+  select(Id, all_of(names(df_1))) 
+
+#Pasar a formato largo para poder graficar
+
+
+df_long <- df_al %>%
+  pivot_longer( 
+    cols = -Id,
+    names_to = "asignatura",
+    values_to = "nota"
+  )
+
+#Gráfico final: líneas + puntos + colores por asignatura
+
+
+
+ggplot(df_long, aes(x = Id, y = nota, color = asignatura, group = asignatura)) +
+  geom_line(size = 1) +
+  geom_point(size = 2) +
+  labs(
+    title = "Calificaciones por alumno y asignatura",
+    x = "Alumno",
+    y = "Calificación"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 90, vjust = 0.5),
+    legend.title = element_blank()
+  )
+
+
+
+```
+
+
+```{r}
+df_2026 <- read_delim("data/NosAutoanalizamos2026 - NosAutoanalizamos (1).tsv", 
+    delim = "\t", escape_double = FALSE, 
+    trim_ws = TRUE, skip = 27)
+#View(df_2026)
+
+
+df_2<-df_2026%>%
+  select(ALG,FP,DCS,MD)%>%
+  mutate(across(everything(),~ case_when(.=="NC" ~ "3",
+                                         .=="NP" ~ NA,
+                                         grepl("^[0-9]+(\\.[0-9]+)?$",.) ~ ., TRUE ~ NA)))%>%
+
+# 3 Convertir a numérico
+mutate(
+  across(everything(), ~ as.numeric(.))
+)
+
+
+#vamos a comparar los resultados
+
+medias_2022 <- sapply(df_1, mean, na.rm = TRUE)
+medias_2026 <- sapply(df_2, mean, na.rm = TRUE)
+
+comparacion_medias <- rbind(medias_2022, medias_2026)
+comparacion_medias
+
+# correlaciones
+
+cor_2022 <- cor(df_1, use="complete.obs")
+cor_2026 <- cor(df_2, use="complete.obs")
+
+cor_2022
+cor_2026
+
+
+
+
+```
+vamos a cotestar las preguntas
+
+```{r}
+#Edad del alumno más joven es 18
+
+df_2026$`FechaNac(DD-MM-YYY)` <- as.Date(df_2026$`FechaNac(DD-MM-YYY)`, format="%d-%m-%Y")
+ref <- as.Date("2026-02-01")
+
+df_2026$Age <- as.numeric(difftime(ref, df_2026$`FechaNac(DD-MM-YYY)`, units="days")) / 365.25
+
+min(df_2026$Age, na.rm = TRUE)
+
+
+
+
+```
+
+```{r}
+#Cuántos alumnos simultanean trabajo y estudios
+#hay 15
+
+
+sum(df_2026$Hwork > 0, na.rm = TRUE)
+
+#¿Hay más hombres o mujeres fumadoras?
+#normalisamos la variable smoke 
+# Pasar todo a mayúsculas
+df_2026$Smoke <- toupper(df_2026$Smoke)
+
+# Corregir valores válidos
+df_2026$Smoke[df_2026$Smoke %in% c("SI", "S", "YES")] <- "SI"
+df_2026$Smoke[df_2026$Smoke %in% c("NO", "N")] <- "NO"
+
+# Cualquier otro valor → NA
+df_2026$Smoke[!df_2026$Smoke %in% c("SI", "NO")] <- NA
+#normalisamos la variable sex
+
+df_2026$Sex <- toupper(df_2026$Sex)
+df_2026$Sex[!df_2026$Sex %in% c("M","F")] <- NA
+#ahora la tabla 
+table(df_2026$Sex, df_2026$Smoke)
+
+
+#entonces hay 30 hombres que no fuman,y 24 mujeres y de los que fuman hay o mujer y 7 hombres
+
+```
+
+
+```{r}
+
+#Media y varianza de Wr.Hnd según sexo
+
+aggregate(Wr.Hnd ~ Sex, df_2026, mean, na.rm=TRUE)
+aggregate(Wr.Hnd ~ Sex, df_2026, var,  na.rm=TRUE)
+
+#Relación entre sexo y mano con la que escribe (NW.Hnd)
+
+tabla <- table(df_2026$Sex, df_2026$NW.Hnd)
+chisq.test(tabla)
+
+#Relación lineal entre Height y Wr.Hnd
+df_2026$Wr.Hnd <- as.numeric(df_2026$Wr.Hnd)
+df_2026$Height <- as.numeric(df_2026$Height)
+
+
+df_2026$Wr.Hnd[!grepl("^[0-9.]+$", df_2026$Wr.Hnd)] <- NA
+df_2026$Wr.Hnd <- as.numeric(df_2026$Wr.Hnd)
+
+
+cor(df_2026$Height, df_2026$Wr.Hnd, use="complete.obs", method="pearson")
+plot(df_2026$Height, df_2026$Wr.Hnd)
+abline(lm(Wr.Hnd ~ Height, data=df_2026), col="red")
+
+#Outliers en Height con identificador de Hampel
+height_clean <- df_2026$Height[!is.na(df_2026$Height)]
+
+
+hampel(height_clean, k = 7)
+
+
+
+```
+```{r}
+#Imputación generalizada de FP usando la media
+
+mean(df_2026$FP.num, na.rm = TRUE)
+
+#Imputación por casos similares usando PulseCat
+df_2026 <- df_2026 %>%
+  mutate(across(
+    c(ALG, FP, DCS, MD),   # pon aquí las columnas reales de notas
+    ~ case_when(
+        . %in% c("NP", "NA", "", " ") ~ NA_character_,
+        . == "NC" ~ "3",
+        grepl("^[0-9]+([.,][0-9]+)?$", .) ~ gsub(",", ".", .),
+        TRUE ~ NA_character_
+    )
+  )) %>%
+  mutate(across(c(ALG, FP, DCS, MD), as.numeric)) %>%
+  rename(
+    ALG.num = ALG,
+    FP.num  = FP,
+    DCS.num = DCS,
+    MD.num  = MD
+  )
+
+
+df_2026$PulseCat <- ifelse(df_2026$Pulse >= 65, "PulseH", "PulseL")
+
+mean_H <- mean(df_2026$FP.num[df_2026$PulseCat=="PulseH"], na.rm=TRUE)
+mean_L <- mean(df_2026$FP.num[df_2026$PulseCat=="PulseL"], na.rm=TRUE)
+
+mean_H
+mean_L
+
+
+#Existe relación entre Pulse y ALG?
+cor(df_2026$Pulse, df_2026$ALG.num, use="complete.obs")
+
+plot(df_2026$Pulse, df_2026$ALG.num)
+
+
+```
 
 
 
