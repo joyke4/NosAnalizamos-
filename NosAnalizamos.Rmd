@@ -1,0 +1,55 @@
+---
+title: "Nosanalisamos"
+author: "joyce kemeni"
+date: "2026-04-23"
+output: html_document
+---
+
+
+```{r}
+#librarias
+
+library(knitr)
+library(tidyr)
+library(readr)
+library(dplyr)
+library(lubridate)
+library(ggplot2)
+library(pacman)
+
+
+```
+
+
+```{r}
+#Eliminamos al usuario cuyo id es martsobm del conjunto de datos.
+datos <- subset(datos, Id != "martsobm")
+
+d_1<-datos%>%
+  select(ALG,FP,DCS,MD)%>%
+  mutate(across(everything(),~ case_when(.=="NC" ~ "3",
+                                         .=="NP" ~ NA,
+                                         grepl("^[0-9]+(\\.[0-9]+)?$",.) ~ ., TRUE ~ NA)))
+
+
+
+```
+
+
+
+```{r}
+
+
+
+
+
+```
+
+
+
+
+
+
+
+
+
